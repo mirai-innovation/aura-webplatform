@@ -20,22 +20,27 @@ export async function GET(request: NextRequest) {
     if (userId) query.userId = userId
     if (status) query.status = status
     const devices = await Device.find(query).populate('userId', 'name username').sort({ createdAt: -1 })
-    const list = devices.map((d) => ({
-      id: d._id.toString(),
-      serialNumber: d.serialNumber,
-      userId: (d as { userId?: { _id: string; name: string; username: string } }).userId
-        ? {
-            id: (d as { userId: { _id: string } }).userId._id?.toString(),
-            name: (d as { userId: { name: string } }).userId?.name,
-            username: (d as { userId: { username: string } }).userId?.username,
-          }
-        : null,
-      model: d.model,
-      firmwareVersion: d.firmwareVersion,
-      status: d.status,
-      lastSeen: d.lastSeen,
-      createdAt: d.createdAt,
-    }))
+    const list = devices.map((d) => {
+      const populated = d.userId as unknown as { _id?: { toString(): string }; name?: string; username?: string } | null | undefined
+      const userIdPayload =
+        populated && typeof populated === 'object' && populated._id != null
+          ? {
+              id: typeof populated._id === 'object' && 'toString' in populated._id ? populated._id.toString() : String(populated._id),
+              name: populated.name,
+              username: populated.username,
+            }
+          : null
+      return {
+        id: d._id.toString(),
+        serialNumber: d.serialNumber,
+        userId: userIdPayload,
+        model: d.model,
+        firmwareVersion: d.firmwareVersion,
+        status: d.status,
+        lastSeen: d.lastSeen,
+        createdAt: d.createdAt,
+      }
+    })
     return NextResponse.json({ devices: list })
   } catch (error: unknown) {
     console.error('Devices list error:', error)
