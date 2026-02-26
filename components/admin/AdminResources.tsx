@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { FiBook, FiPlus, FiRefreshCw, FiEdit2, FiTrash2 } from 'react-icons/fi'
+import { FiBook, FiPlus, FiRefreshCw, FiEdit2, FiTrash2, FiUpload } from 'react-icons/fi'
 
 interface Resource {
   id: string
@@ -9,6 +9,7 @@ interface Resource {
   description: string
   type: string
   url?: string
+  s3Key?: string
   duration?: string
   size?: string
   level?: string
@@ -32,13 +33,16 @@ export default function AdminResources({ token }: { token: string | null }) {
     description: '',
     type: 'link',
     url: '',
+    s3Key: '',
     duration: '',
     size: '',
     level: '',
     order: 0,
     visible: true,
   })
+  const [file, setFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState('')
 
   const fetchList = useCallback(async () => {
     if (!token) return
@@ -66,21 +70,43 @@ export default function AdminResources({ token }: { token: string | null }) {
     setSaving(true)
     setError('')
     setSuccess('')
+    setUploadProgress('')
     try {
-      const url = editing ? `/api/resources/${editing.id}` : '/api/resources'
+      let s3KeyToUse = form.s3Key || undefined
+      if (file && file.size > 0) {
+        setUploadProgress('Uploading file...')
+        const formData = new FormData()
+        formData.append('file', file)
+        const uploadRes = await fetch('/api/resources/upload', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        })
+        const uploadData = await uploadRes.json()
+        if (!uploadRes.ok) {
+          setError(uploadData.error || 'Upload failed')
+          setSaving(false)
+          return
+        }
+        s3KeyToUse = uploadData.s3Key
+        setUploadProgress('')
+      }
+
+      const apiUrl = editing ? `/api/resources/${editing.id}` : '/api/resources'
       const method = editing ? 'PATCH' : 'POST'
       const body = {
         title: form.title,
         description: form.description,
         type: form.type,
         url: form.url || undefined,
+        s3Key: s3KeyToUse,
         duration: form.duration || undefined,
         size: form.size || undefined,
         level: form.level || undefined,
         order: form.order,
         visible: form.visible,
       }
-      const res = await fetch(url, {
+      const res = await fetch(apiUrl, {
         method,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
@@ -90,7 +116,8 @@ export default function AdminResources({ token }: { token: string | null }) {
         setSuccess(editing ? 'Resource updated' : 'Resource created')
         setShowForm(false)
         setEditing(null)
-        setForm({ title: '', description: '', type: 'link', url: '', duration: '', size: '', level: '', order: 0, visible: true })
+        setFile(null)
+        setForm({ title: '', description: '', type: 'link', url: '', s3Key: '', duration: '', size: '', level: '', order: 0, visible: true })
         fetchList()
       } else setError(data.error || 'Failed to save')
     } catch {
@@ -133,7 +160,7 @@ export default function AdminResources({ token }: { token: string | null }) {
             onClick={() => {
               setShowForm(true)
               setEditing(null)
-              setForm({ title: '', description: '', type: 'link', url: '', duration: '', size: '', level: '', order: 0, visible: true })
+              setForm({ title: '', description: '', type: 'link', url: '', s3Key: '', duration: '', size: '', level: '', order: 0, visible: true })
             }}
             className="btn-primary flex items-center gap-2"
           >
@@ -196,7 +223,7 @@ export default function AdminResources({ token }: { token: string | null }) {
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2 text-white/80">URL (optional)</label>
+              <label className="block text-sm font-medium mb-2 text-white/80">URL (optional, for external links)</label>
               <input
                 type="url"
                 value={form.url}
@@ -205,6 +232,28 @@ export default function AdminResources({ token }: { token: string | null }) {
                 placeholder="https://..."
               />
             </div>
+            {(form.type === 'pdf' || form.type === 'video') && (
+              <div>
+                <label className="block text-sm font-medium mb-2 text-white/80 flex items-center gap-2">
+                  <FiUpload className="text-electric-cyan" />
+                  Subir archivo (PDF o vídeo)
+                </label>
+                <input
+                  type="file"
+                  accept={form.type === 'pdf' ? 'application/pdf' : 'video/mp4,video/webm,video/quicktime'}
+                  onChange={(e) => setFile(e.target.files?.[0] || null)}
+                  className="block w-full text-sm text-white/70 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-neon-violet/30 file:text-neon-violet file:font-medium file:cursor-pointer hover:file:bg-neon-violet/50"
+                />
+                {file && (
+                  <p className="mt-2 text-sm text-white/60">
+                    {file.name} ({(file.size / 1024).toFixed(1)} KB)
+                  </p>
+                )}
+                {editing?.s3Key && !file && (
+                  <p className="mt-2 text-sm text-white/50">Archivo actual en S3. Sube uno nuevo para reemplazar.</p>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2 text-white/80">Duration (e.g. 45 min)</label>
@@ -235,9 +284,10 @@ export default function AdminResources({ token }: { token: string | null }) {
                 <span className="text-white/80">Visible</span>
               </label>
             </div>
+            {uploadProgress && <p className="text-sm text-electric-cyan">{uploadProgress}</p>}
             <div className="flex gap-3">
-              <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Save'}</button>
-              <button type="button" onClick={() => { setShowForm(false); setEditing(null) }} className="btn-secondary">Cancel</button>
+              <button type="submit" disabled={saving} className="btn-primary">{saving ? (uploadProgress ? 'Uploading...' : 'Saving...') : 'Save'}</button>
+              <button type="button" onClick={() => { setShowForm(false); setEditing(null); setFile(null) }} className="btn-secondary">Cancel</button>
             </div>
           </form>
         </div>
@@ -261,11 +311,12 @@ export default function AdminResources({ token }: { token: string | null }) {
                   <button
                     onClick={() => {
                       setEditing(r)
-                      setForm({
+                        setForm({
                         title: r.title,
                         description: r.description,
                         type: r.type,
                         url: r.url || '',
+                        s3Key: r.s3Key || '',
                         duration: r.duration || '',
                         size: r.size || '',
                         level: r.level || '',

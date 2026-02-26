@@ -12,6 +12,7 @@ interface Resource {
   description: string
   type: 'video' | 'pdf' | 'link'
   url?: string
+  s3Key?: string
   duration?: string
   size?: string
   level?: string
@@ -57,18 +58,35 @@ export default function LearningPage() {
   const pdfs = resources.filter((r) => r.type === 'pdf').sort((a, b) => a.order - b.order)
   const links = resources.filter((r) => r.type === 'link').sort((a, b) => a.order - b.order)
 
-  const handlePlayVideo = (r: Resource) => {
-    if (r.url) window.open(r.url, '_blank')
+  const getResourceUrl = async (r: Resource): Promise<string | null> => {
+    if (r.s3Key) {
+      try {
+        const res = await fetch(`/api/resources/${r.id}/download`)
+        if (!res.ok) return null
+        const data = await res.json()
+        return data.downloadUrl || null
+      } catch {
+        return null
+      }
+    }
+    return r.url || null
+  }
+
+  const handlePlayVideo = async (r: Resource) => {
+    const url = await getResourceUrl(r)
+    if (url) window.open(url, '_blank')
     else alert(`Video: ${r.title}`)
   }
 
-  const handleDownloadGuide = (r: Resource) => {
-    if (r.url) window.open(r.url, '_blank')
+  const handleDownloadGuide = async (r: Resource) => {
+    const url = await getResourceUrl(r)
+    if (url) window.open(url, '_blank')
     else alert(`Download: ${r.title}`)
   }
 
-  const handleOpenLink = (r: Resource) => {
-    if (r.url) window.open(r.url, '_blank')
+  const handleOpenLink = async (r: Resource) => {
+    const url = await getResourceUrl(r)
+    if (url) window.open(url, '_blank')
   }
 
   if (!hydrated || !isAuthenticated) return null
@@ -106,8 +124,8 @@ export default function LearningPage() {
                   {videos.map((r) => (
                     <div
                       key={r.id}
-                      className={`glass-card-hover overflow-hidden group ${r.url ? 'cursor-pointer' : 'cursor-default opacity-90'}`}
-                      onClick={() => r.url && handlePlayVideo(r)}
+                      className={`glass-card-hover overflow-hidden group ${(r.url || r.s3Key) ? 'cursor-pointer' : 'cursor-default opacity-90'}`}
+                      onClick={() => (r.url || r.s3Key) && handlePlayVideo(r)}
                     >
                       <div className="relative aspect-video bg-gradient-to-br from-electric-cyan/20 to-neon-violet/20 flex items-center justify-center">
                         <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-all flex items-center justify-center">
@@ -130,7 +148,7 @@ export default function LearningPage() {
                             <span>{r.duration}</span>
                           </div>
                         )}
-                        {!r.url && (
+                        {!r.url && !r.s3Key && (
                           <p className="text-xs text-white/50 mt-2">Link not configured</p>
                         )}
                       </div>
@@ -166,7 +184,7 @@ export default function LearningPage() {
                             {r.size && <span>•</span>}
                             {r.size && <span>{r.size}</span>}
                           </div>
-                          {r.url ? (
+                          {(r.url || r.s3Key) ? (
                             <button
                               onClick={() => handleDownloadGuide(r)}
                               className="btn-secondary text-sm px-4 py-2 flex items-center gap-2"
@@ -201,7 +219,7 @@ export default function LearningPage() {
                       <div className="flex-1">
                         <h3 className="font-semibold mb-2">{r.title}</h3>
                         <p className="text-sm text-white/60 mb-4">{r.description}</p>
-                        {r.url ? (
+                        {(r.url || r.s3Key) ? (
                           <button
                             onClick={() => handleOpenLink(r)}
                             className="btn-secondary text-sm px-4 py-2 flex items-center gap-2"
