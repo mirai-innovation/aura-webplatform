@@ -22,7 +22,7 @@ interface Resource {
 
 export default function LearningPage() {
   const router = useRouter()
-  const { isAuthenticated, hydrated, initialize } = useAuthStore()
+  const { isAuthenticated, hydrated, initialize, token } = useAuthStore()
   const [resources, setResources] = useState<Resource[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -41,8 +41,11 @@ export default function LearningPage() {
       try {
         setLoading(true)
         const res = await fetch('/api/resources')
+        const data = await res.json().catch(() => ({}))
+        // #region agent log
+        const _log={sessionId:'7680a5',location:'learning/page.tsx:fetchResources',message:'Resources list',data:{ok:res.ok,status:res.status,hasResources:Array.isArray(data?.resources),length:data?.resources?.length},timestamp:Date.now(),hypothesisId:'H2'};fetch('http://127.0.0.1:7421/ingest/2cd6cccd-b160-4e66-bd65-a286a4b5e4cf',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7680a5'},body:JSON.stringify(_log)}).catch(()=>{});if (typeof console !== 'undefined' && console.debug) console.debug('[debug 7680a5]', _log);
+        // #endregion
         if (res.ok) {
-          const data = await res.json()
           setResources(data.resources || [])
         }
       } catch (e) {
@@ -58,35 +61,49 @@ export default function LearningPage() {
   const pdfs = resources.filter((r) => r.type === 'pdf').sort((a, b) => a.order - b.order)
   const links = resources.filter((r) => r.type === 'link').sort((a, b) => a.order - b.order)
 
-  const getResourceUrl = async (r: Resource): Promise<string | null> => {
+  /** Returns { url, fileName? } so download can use filename; fileName only for S3. */
+  const getResourceUrl = async (r: Resource): Promise<{ url: string; fileName?: string } | null> => {
     if (r.s3Key) {
       try {
-        const res = await fetch(`/api/resources/${r.id}/download`)
+        const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
+        const res = await fetch(`/api/resources/${r.id}/download`, { headers })
+        const data = await res.json().catch(() => ({}))
         if (!res.ok) return null
-        const data = await res.json()
-        return data.downloadUrl || null
+        const url = data.downloadUrl || null
+        const fileName = data.fileName || undefined
+        if (!url) return null
+        return { url, fileName }
       } catch {
         return null
       }
     }
-    return r.url || null
+    if (r.url) return { url: r.url }
+    return null
   }
 
   const handlePlayVideo = async (r: Resource) => {
-    const url = await getResourceUrl(r)
-    if (url) window.open(url, '_blank')
+    const result = await getResourceUrl(r)
+    if (result) window.open(result.url, '_blank')
     else alert(`Video: ${r.title}`)
   }
 
   const handleDownloadGuide = async (r: Resource) => {
-    const url = await getResourceUrl(r)
-    if (url) window.open(url, '_blank')
-    else alert(`Download: ${r.title}`)
+    const result = await getResourceUrl(r)
+    if (result) {
+      const a = document.createElement('a')
+      a.href = result.url
+      a.download = result.fileName || r.title
+      a.target = '_blank'
+      a.rel = 'noopener noreferrer'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    } else alert(`Download: ${r.title}`)
   }
 
   const handleOpenLink = async (r: Resource) => {
-    const url = await getResourceUrl(r)
-    if (url) window.open(url, '_blank')
+    const result = await getResourceUrl(r)
+    if (result) window.open(result.url, '_blank')
   }
 
   if (!hydrated || !isAuthenticated) return null

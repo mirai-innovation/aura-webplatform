@@ -49,8 +49,11 @@ export default function AdminResources({ token }: { token: string | null }) {
     setLoading(true)
     try {
       const res = await fetch('/api/resources?visible=false', { headers: { Authorization: `Bearer ${token}` } })
+      const data = await res.json().catch(() => ({}))
+      // #region agent log
+      const _log={sessionId:'7680a5',location:'AdminResources.tsx:fetchList',message:'Admin resources list',data:{ok:res.ok,status:res.status,listLength:data?.resources?.length,firstHasS3Key:!!data?.resources?.[0]?.s3Key},timestamp:Date.now(),hypothesisId:'H3'};fetch('http://127.0.0.1:7421/ingest/2cd6cccd-b160-4e66-bd65-a286a4b5e4cf',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7680a5'},body:JSON.stringify(_log)}).catch(()=>{});if (typeof console !== 'undefined' && console.debug) console.debug('[debug 7680a5]', _log);
+      // #endregion
       if (res.ok) {
-        const data = await res.json()
         setList(data.resources || [])
       } else setError('Failed to load')
     } catch {
@@ -75,20 +78,35 @@ export default function AdminResources({ token }: { token: string | null }) {
       let s3KeyToUse = form.s3Key || undefined
       if (file && file.size > 0) {
         setUploadProgress('Uploading file...')
-        const formData = new FormData()
-        formData.append('file', file)
-        const uploadRes = await fetch('/api/resources/upload', {
+        // Use presigned URL so the file goes directly to S3 (works in serverless/deployment, no body size limit)
+        const urlRes = await fetch('/api/resources/upload-url', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ fileName: file.name, contentType: file.type }),
         })
-        const uploadData = await uploadRes.json()
-        if (!uploadRes.ok) {
-          setError(uploadData.error || 'Upload failed')
+        const urlData = await urlRes.json().catch(() => ({}))
+        if (!urlRes.ok) {
+          setError(urlData.error || 'Failed to get upload URL')
           setSaving(false)
           return
         }
-        s3KeyToUse = uploadData.s3Key
+        const { uploadUrl, s3Key: newKey } = urlData
+        if (!uploadUrl || !newKey) {
+          setError('Invalid upload URL response')
+          setSaving(false)
+          return
+        }
+        const putRes = await fetch(uploadUrl, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': file.type },
+        })
+        if (!putRes.ok) {
+          setError('Failed to upload file to storage')
+          setSaving(false)
+          return
+        }
+        s3KeyToUse = newKey
         setUploadProgress('')
       }
 
@@ -112,6 +130,9 @@ export default function AdminResources({ token }: { token: string | null }) {
         body: JSON.stringify(body),
       })
       const data = await res.json()
+      // #region agent log
+      const _log={sessionId:'7680a5',location:'AdminResources.tsx:save',message:'Save resource response',data:{ok:res.ok,status:res.status,error:data?.error,bodyKeys:data?Object.keys(data):[]},timestamp:Date.now(),hypothesisId:'H5'};fetch('http://127.0.0.1:7421/ingest/2cd6cccd-b160-4e66-bd65-a286a4b5e4cf',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7680a5'},body:JSON.stringify(_log)}).catch(()=>{});if (typeof console !== 'undefined' && console.debug) console.debug('[debug 7680a5]', _log);
+      // #endregion
       if (res.ok) {
         setSuccess(editing ? 'Resource updated' : 'Resource created')
         setShowForm(false)

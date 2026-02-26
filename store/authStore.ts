@@ -35,6 +35,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       })
 
       const data = await response.json()
+      // #region agent log
+      const _log={sessionId:'7680a5',location:'authStore.ts:login',message:'Login response',data:{ok:response.ok,status:response.status,hasToken:!!data?.token,hasUser:!!data?.user,error:data?.error},timestamp:Date.now(),hypothesisId:'H1'};fetch('http://127.0.0.1:7421/ingest/2cd6cccd-b160-4e66-bd65-a286a4b5e4cf',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7680a5'},body:JSON.stringify(_log)}).catch(()=>{});if (typeof console !== 'undefined' && console.debug) console.debug('[debug 7680a5]', _log);
+      // #endregion
 
       if (!response.ok) {
         return { success: false, error: data.error || 'Login failed' }
@@ -100,11 +103,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (response.ok) {
         const data = await response.json()
+        // #region agent log
+        const _log={sessionId:'7680a5',location:'authStore.ts:fetchCurrentUser',message:'Me response ok',data:{hasUser:!!data?.user},timestamp:Date.now(),hypothesisId:'H1'};fetch('http://127.0.0.1:7421/ingest/2cd6cccd-b160-4e66-bd65-a286a4b5e4cf',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7680a5'},body:JSON.stringify(_log)}).catch(()=>{});if (typeof console !== 'undefined' && console.debug) console.debug('[debug 7680a5]', _log);
+        // #endregion
         if (typeof window !== 'undefined') {
           localStorage.setItem('aura-user', JSON.stringify(data.user))
         }
         set({ user: data.user })
       } else {
+        // #region agent log
+        const _log={sessionId:'7680a5',location:'authStore.ts:fetchCurrentUser',message:'Me response not ok',data:{status:response.status},timestamp:Date.now(),hypothesisId:'H1'};fetch('http://127.0.0.1:7421/ingest/2cd6cccd-b160-4e66-bd65-a286a4b5e4cf',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7680a5'},body:JSON.stringify(_log)}).catch(()=>{});if (typeof console !== 'undefined' && console.debug) console.debug('[debug 7680a5]', _log);
+        // #endregion
         // Token invalid, logout
         get().logout()
       }
